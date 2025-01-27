@@ -7,40 +7,41 @@ use serde::{Deserialize, Serialize};
 
 use ndarray::Array2;
 use num_complex::Complex;
-use std::collections::HashMap;
 
 use ndarray_npy::NpzReader;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Waveform {
-    freqs: Vec<f64>,
-    amps: Vec<f64>,
-    phases: Vec<f64>,
-    n_samples: u64,
+    pub freqs: Vec<f64>,
+    pub amps: Vec<f64>,
+    pub phases: Vec<f64>,
+    pub n_samples: u64,
     _sample_rate: f64,
-    allow_sat: bool,
+    pub allow_sat: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SweepConfig {
-    steps: Vec<f64>,
-    waveform: Waveform,
-    lo_center: f64,
-    average: u64,
-    attens: Option<(f64, f64)>,
-    tap: String,
-    rmses: bool,
+    pub steps: Vec<f64>,
+    pub waveform: Waveform,
+    pub lo_center: f64,
+    pub average: u64,
+    pub attens: Option<(f64, f64)>,
+    pub tap: String,
+    pub rmses: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PowerSweepConfig {
-    attens: Vec<(f64, f64)>,
-    sweep_config: SweepConfig,
+    pub attens: Vec<(f64, f64)>,
+    pub sweep_config: SweepConfig,
 }
 
+pub type ComplexPSweep = Vec<((f64, f64), Array2<Complex<f32>>)>;
+
 pub struct PowerSweepValues {
-    iq: Vec<((f64, f64), Array2<Complex<f32>>)>,
-    iqs: Option<HashMap<(f64, f64), Array2<Complex<f32>>>>,
+    pub iq: ComplexPSweep,
+    pub iqs: Option<ComplexPSweep>,
 }
 
 impl PowerSweepValues {

@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Seek};
 
 use colorous::VIRIDIS;
 use egui_plot::{Line, Plot, Points, VLine};
@@ -7,6 +7,7 @@ use ndarray_npy::NpzReader;
 
 use egui::{Color32, Id};
 use num_complex::ComplexFloat;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{PowerSweepConfig, PowerSweepValues};
@@ -24,6 +25,64 @@ pub struct ClickThrough {
     show_mag: bool,
 }
 
+enum WasmReader<'a> {
+    File(std::fs::File),
+    Bytes { buffer: &'a [u8], cursor: usize },
+}
+
+impl Read for WasmReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            WasmReader::File(f) => f.read(buf),
+            WasmReader::Bytes { buffer, cursor } => {
+                let mut read = 0usize;
+                while *cursor < buffer.len() && read < buf.len() {
+                    buf[read] = buffer[*cursor];
+                    *cursor += 1;
+                    read += 1;
+                }
+                Ok(read)
+            }
+        }
+    }
+}
+
+impl Seek for WasmReader<'_> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        match self {
+            WasmReader::File(f) => f.seek(pos),
+            WasmReader::Bytes { buffer, cursor } => {
+                match pos {
+                    std::io::SeekFrom::Start(i) => {
+                        *cursor = i as usize;
+                        if *cursor > buffer.len() {
+                            *cursor = buffer.len()
+                        }
+                    }
+                    std::io::SeekFrom::Current(i) => {
+                        if i >= 0 {
+                            *cursor += i as usize;
+                            if *cursor > buffer.len() {
+                                *cursor = buffer.len()
+                            }
+                        } else {
+                            *cursor -= (-i) as usize
+                        }
+                    }
+                    std::io::SeekFrom::End(i) => {
+                        if i >= 0 {
+                            *cursor = buffer.len()
+                        } else {
+                            *cursor = buffer.len() - ((-i) as usize)
+                        }
+                    }
+                };
+                Ok(*cursor as u64)
+            }
+        }
+    }
+}
+
 impl ClickThrough {
     /// Called once before the first frame.
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
@@ -35,13 +94,31 @@ impl ClickThrough {
         // if let Some(storage) = cc.storage {
         //     return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         // }
+        let (mut jf, mut pf) = {
+            if cfg!(target_arch = "wasm32") {
+                (
+                    WasmReader::Bytes {
+                        buffer: include_bytes!("../psweepconfig.json"),
+                        cursor: 0,
+                    },
+                    WasmReader::Bytes {
+                        buffer: include_bytes!("../psweep.npz"),
+                        cursor: 0,
+                    },
+                )
+            } else {
+                (
+                    WasmReader::File(std::fs::File::open("./psweepconfig.json").unwrap()),
+                    WasmReader::File(std::fs::File::open("./psweep.npz").unwrap()),
+                )
+            }
+        };
+
         let mut json = String::new();
-        std::fs::File::open("./psweepconfig.json")
-            .unwrap()
-            .read_to_string(&mut json)
-            .unwrap();
-        let mut pv = NpzReader::new(std::fs::File::open("./psweep.npz").unwrap()).unwrap();
+        jf.read_to_string(&mut json).unwrap();
+        let mut pv = NpzReader::new(&mut pf).unwrap();
         let psweep: PowerSweepConfig = serde_json::from_str(&json).unwrap();
+
         let maxo: f64 = psweep.attens.iter().fold(f64::MIN, |a, b| a.max(b.0));
         let mino: f64 = psweep.attens.iter().fold(f64::MAX, |a, b| a.min(b.0));
         let maxf: f64 = psweep
@@ -76,11 +153,15 @@ struct BiasPoint {
     freq: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct BiasSetting {
     output_atten: f64,
+    amp: f64,
     freq: f64,
 }
+
+/// atten index, output atten, loop, amp plot
+type IQs = (usize, f64, Vec<[f64; 2]>, Vec<[f64; 2]>);
 
 impl eframe::App for ClickThrough {
     /// Called by the frame work to save state before shutdown.
@@ -156,7 +237,7 @@ impl eframe::App for ClickThrough {
             let h = ui.available_height();
             ui.horizontal(|ui| {
                 ui.set_height(h);
-                let iqs: Vec<(usize, f64, Vec<[f64; 2]>, Vec<[f64; 2]>)> = self
+                let iqs: Vec<IQs> = self
                     .values
                     .iq
                     .iter()
@@ -197,7 +278,7 @@ impl eframe::App for ClickThrough {
                     .steps
                     .iter()
                     .enumerate()
-                    .filter(|(fi, f)| **f >= self.freq_range.0 && **f <= self.freq_range.1)
+                    .filter(|(_, f)| **f >= self.freq_range.0 && **f <= self.freq_range.1)
                     .map(|(fi, _)| fi)
                     .collect();
 
@@ -272,7 +353,10 @@ impl eframe::App for ClickThrough {
                     if let Some(bp) = bp {
                         let bs = BiasSetting {
                             output_atten: self.psweep.attens[bp.output_atten].0,
-                            freq: self.psweep.sweep_config.steps[bp.freq],
+                            amp: self.psweep.sweep_config.waveform.amps[self.resonator],
+                            freq: self.psweep.sweep_config.steps[bp.freq] * 1e6
+                                + self.psweep.sweep_config.waveform.freqs[self.resonator]
+                                + self.psweep.sweep_config.lo_center * 1e6,
                         };
                         self.settings.insert(self.resonator, bs);
                         self.resonator += 1;
