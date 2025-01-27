@@ -134,15 +134,7 @@ jobs:
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable --profile default --target ${{ matrix.TARGET }} -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-    # For linux, it's necessary to use cross from the git repository to avoid glibc problems
-    # Ref: https://github.com/cross-rs/cross/issues/1510
-    - name: Install cross for linux
-      if: contains(matrix.TARGET, 'linux')
-      run: |
-        cargo install cross --git https://github.com/cross-rs/cross --rev 1b8cf50d20180c1a394099e608141480f934b7f7
-
     - name: Install cross for mac and windows
-      if: ${{ !contains(matrix.TARGET, 'linux') }}
       run: |
         cargo install cross
 
@@ -155,16 +147,16 @@ jobs:
 
     - uses: actions/upload-artifact@master
       with:
-        name: eframe_template-${{ matrix.TARGET }}${{ matrix.EXTENSION }}
-        path: eframe_template-${{ matrix.TARGET }}${{ matrix.EXTENSION }}
+        name: guilo-${{ matrix.TARGET }}${{ matrix.EXTENSION }}
+        path: guilo-${{ matrix.TARGET }}${{ matrix.EXTENSION }}
 
     - uses: svenstaro/upload-release-action@v2
       name: Upload binaries to release
       if: ${{ github.event_name == 'push' }}
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: eframe_template-${{ matrix.TARGET }}${{ matrix.EXTENSION }}
-        asset_name: eframe_template-${{ matrix.TARGET }}${{ matrix.EXTENSION }}
+        file: guilo-${{ matrix.TARGET }}${{ matrix.EXTENSION }}
+        asset_name: guilo-${{ matrix.TARGET }}${{ matrix.EXTENSION }}
         tag: ${{ github.ref }}
         prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
         overwrite: true
