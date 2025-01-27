@@ -5,7 +5,7 @@ use egui_plot::{Line, Plot, Points, VLine};
 use ndarray::prelude::*;
 use ndarray_npy::NpzReader;
 
-use egui::{Color32, Id};
+use egui::{Color32, Id, Label};
 use num_complex::ComplexFloat;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -23,6 +23,7 @@ pub struct ClickThrough {
     atten_range: (f64, f64),
     atten_max: (f64, f64),
     show_mag: bool,
+    show_settings: bool,
 }
 
 enum WasmReader<'a> {
@@ -143,6 +144,7 @@ impl ClickThrough {
             atten_range: (mino, maxo),
             atten_max: (mino, maxo),
             show_mag: true,
+            show_settings: false,
         }
     }
 }
@@ -186,12 +188,28 @@ impl eframe::App for ClickThrough {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                     });
-                    ui.add_space(16.0);
                 }
 
+                ui.menu_button("View", |ui| {
+                    if ui.button("Bias Settings").clicked() {
+                        self.show_settings = !self.show_settings
+                    }
+                });
+                ui.add_space(16.0);
                 egui::widgets::global_theme_preference_buttons(ui);
             });
         });
+
+        egui::Window::new("Bias Settings")
+            .open(&mut self.show_settings)
+            .scroll([false, true])
+            .show(ctx, |ui| {
+                ui.add(
+                    Label::new(serde_json::to_string_pretty(&self.settings).unwrap())
+                        .selectable(true)
+                        .extend(),
+                )
+            });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
